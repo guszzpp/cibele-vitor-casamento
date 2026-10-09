@@ -4,7 +4,7 @@
  * Nunca insira service_role, secret key ou tokens de pagamento neste arquivo.
  */
 window.WEDDING_CONFIG = Object.freeze({
-  supabaseUrl: "",
-  supabasePublishableKey: "",
+  supabaseUrl: "https://ptgusdyazzswsxtxqleu.supabase.co",
+  supabasePublishableKey: "sb_publishable_kZY_Z2NFnFToQZD-ojz3Mw_DAgIgUu7",
   weddingDate: "2027-09-18T16:30:00-03:00"
 });
