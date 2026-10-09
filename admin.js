@@ -1,0 +1,26 @@
+(() => {
+  'use strict';
+  const cfg=window.WEDDING_CONFIG || {};
+  const $=id=>document.getElementById(id);
+  const status=$('adminStatus'),dashboard=$('dashboard');
+  function showStatus(html){status.hidden=false;status.innerHTML=html;dashboard.hidden=true;}
+  function cell(row,text){let td=document.createElement('td');td.textContent=String(text??'—');row.appendChild(td);return td;}
+  function empty(tbody,count){if(count)return;const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.textContent='Nenhum registro.';tr.appendChild(td);tbody.appendChild(tr);}
+  if(!cfg.supabaseUrl||!cfg.supabasePublishableKey){showStatus('<strong>Projeto Supabase ainda não configurado.</strong><p>O site público está em modo demonstração. Crie um projeto próprio, execute <code>supabase/schema.sql</code>, configure <code>config.js</code> e cadastre os administradores conforme o README.</p>');return;}
+  if(!window.supabase?.createClient){showStatus('<p>Não foi possível carregar a biblioteca Supabase. Verifique a conexão.</p>');return;}
+  const db=window.supabase.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey);
+  async function check(){const {data:{user},error}=await db.auth.getUser();if(error||!user){login();return;}const {data:admin,error:accessError}=await db.from('wedding_admins').select('user_id').eq('user_id',user.id).maybeSingle();if(accessError||!admin){showStatus('<strong>Acesso não autorizado.</strong><p>Este usuário não está cadastrado como administrador do casamento.</p>');$('logout').hidden=false;return;}await showDashboard();}
+  function login(){showStatus('<strong>Entre com seu e-mail autorizado</strong><p>Enviaremos um link seguro de acesso. O endereço precisa estar registrado como administrador no Supabase.</p><form id="loginForm"><label for="adminEmail" class="eyebrow eyebrow-green">SEU E-MAIL</label><input id="adminEmail" type="email" required placeholder="voce@exemplo.com"><button class="btn btn-dark" type="submit">ENVIAR LINK DE ACESSO <span>↗</span></button></form><p id="loginFeedback" class="admin-note"></p>');$('loginForm').addEventListener('submit',async e=>{e.preventDefault();const email=$('adminEmail').value.trim();const returnUrl=new URL('admin.html',location.href).href;const {error}=await db.auth.signInWithOtp({email,options:{emailRedirectTo:returnUrl}});$('loginFeedback').textContent=error?'Erro: '+error.message:'Link solicitado. Confira o e-mail e siga as instruções. O endereço de retorno deve constar nas URLs autorizadas do Supabase.';});}
+  async function showDashboard(){const [rs,ms,ints,gs]=await Promise.all([db.from('rsvps').select('*').order('created_at',{ascending:false}),db.from('wedding_messages').select('*').order('created_at',{ascending:false}),db.from('gift_intents').select('*').order('created_at',{ascending:false}),db.from('gifts').select('id,title')]);const err=[rs,ms,ints,gs].find(x=>x.error);if(err){showStatus('<strong>Erro de permissões.</strong><p>Confira as políticas do Supabase e tente novamente.</p>');return;}status.hidden=true;dashboard.hidden=false;$('logout').hidden=false;
+    const giftsById=Object.fromEntries((gs.data||[]).map(g=>[g.id,g.title]));
+    $('statConfirmed').textContent=(rs.data||[]).filter(r=>r.attending).reduce((sum,r)=>sum+1+Number(r.companions||0),0);
+    $('statMessages').textContent=(ms.data||[]).filter(x=>!x.approved).length;
+    $('statIntents').textContent=(ints.data||[]).length;
+    const rsvp=$('rsvpRows');rsvp.replaceChildren();(rs.data||[]).forEach(item=>{const tr=document.createElement('tr');cell(tr,item.guest_name);cell(tr,item.attending?'Sim':'Não');cell(tr,item.companions);cell(tr,item.email);cell(tr,item.dietary);rsvp.appendChild(tr)});empty(rsvp,(rs.data||[]).length);
+    const mlist=$('messageRows');mlist.replaceChildren();(ms.data||[]).forEach(item=>{const tr=document.createElement('tr');cell(tr,item.author);cell(tr,item.body);cell(tr,item.approved?'Publicado':'Pendente');const action=cell(tr,'');const buttons=document.createElement('div');buttons.className='admin-actions';const toggle=document.createElement('button');toggle.textContent=item.approved?'OCULTAR':'APROVAR';toggle.addEventListener('click',async()=>{toggle.disabled=true;const {error}=await db.from('wedding_messages').update({approved:!item.approved}).eq('id',item.id);if(error){alert('Falha ao atualizar: '+error.message);toggle.disabled=false;}else await showDashboard();});buttons.appendChild(toggle);action.appendChild(buttons);mlist.appendChild(tr);});empty(mlist,(ms.data||[]).length);
+    const ilist=$('giftRows');ilist.replaceChildren();(ints.data||[]).forEach(item=>{const tr=document.createElement('tr');cell(tr,item.buyer_name);cell(tr,giftsById[item.gift_id]||'Presente');cell(tr,item.buyer_email);cell(tr,item.note);ilist.appendChild(tr);});empty(ilist,(ints.data||[]).length);
+  }
+  $('logout').addEventListener('click',async()=>{await db.auth.signOut();$('logout').hidden=true;login();});
+  db.auth.onAuthStateChange((event)=>{if(event==='SIGNED_IN')setTimeout(check,0)});
+  check();
+})();
